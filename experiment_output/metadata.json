@@ -1,0 +1,21 @@
+{
+  "config": {
+    "t1": 0.5,
+    "t2": 0.05,
+    "learning_rate": 0.1,
+    "decay": 0.9,
+    "gaussian_sigma": 1.0,
+    "epochs": 50
+  },
+  "dataset_shape": [
+    200,
+    10
+  ],
+  "trained_at": "2025-10-08T14:27:54.355488",
+  "model_path": "experiment_output/ghsom_model.pkl",
+  "total_neurons": 57,
+  "root_map_shape": [
+    2,
+    2
+  ]
+}

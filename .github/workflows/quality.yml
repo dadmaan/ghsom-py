@@ -1,0 +1,37 @@
+name: Code Quality
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install black ruff mypy numpy
+
+    - name: Check formatting with Black
+      run: |
+        black --check ghsom/ tests/ --line-length 100
+
+    - name: Lint with Ruff
+      run: |
+        ruff check ghsom/ tests/
+
+    - name: Type check with MyPy
+      run: |
+        mypy ghsom/ --ignore-missing-imports
+      continue-on-error: true

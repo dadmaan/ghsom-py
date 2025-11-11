@@ -1,0 +1,580 @@
+from math import ceil
+
+import numpy as np
+
+
+class GSOM:
+    def __init__(
+        self,
+        initial_map_size,
+        parent_quantization_error,
+        t1,
+        data_size,
+        weights_map,
+        parent_dataset,
+        neuron_builder,
+    ):
+        """
+        Initialize GSOM with the given parameters and create a matrix of Neuron instances.
+
+        :param initial_map_size: tuple (int, int)
+            The initial size of the map (height, width).
+
+        :param parent_quantization_error: float
+            The quantization error of the parent neuron.
+
+        :param t1: float
+            Tau_1 parameter controlling the growth of the map.
+
+        :param data_size: int
+            The size of the data.
+
+        :param weights_map: np.ndarray
+            A 2D array representing the initial weights of the neurons.
+
+        :param parent_dataset: np.ndarray
+            The dataset associated with the parent neuron.
+
+        :param neuron_builder: NeuronBuilder object
+            An instance of the NeuronBuilder class.
+        """
+        assert parent_dataset is not None, "Provided dataset is empty"
+        assert len(parent_dataset) > 0, "Provided dataset is empty"
+        assert data_size > 0, "Data size must be positive"
+
+        self.__neuron_builder = neuron_builder
+        self.__data_size = data_size
+        self.__t1 = t1
+        self.__parent_quantization_error = parent_quantization_error
+        self.__initial_map_size = initial_map_size
+        self.__parent_dataset = parent_dataset
+
+        self.weights_map = [weights_map]
+
+        self.neurons = self.__build_neurons_list()
+
+    def winner_neuron(self, data):
+        """
+        Find the neuron that is closest to a given data point or set of data points.
+
+        :param data: np.ndarray
+            The data point(s) to compare against.
+
+        :return: tuple
+            A tuple containing a list of winner neurons and a support list
+            containing the indices of the data points for which each neuron is the winner.
+        """
+        number_of_data = 1 if (len(data.shape) == 1) else data.shape[0]
+        distances = np.empty(shape=(number_of_data, len(self.neurons.values())))
+
+        neurons_list = list(self.neurons.values())
+        for idx, neuron in enumerate(neurons_list):
+            distances[:, idx] = neuron.activation(data)
+
+        winner_neuron_per_data = distances.argmin(axis=1)
+
+        support_stuff = [
+            [position for position in np.where(winner_neuron_per_data == neuron_idx)[0]]
+            for neuron_idx in range(len(neurons_list))
+        ]
+
+        winner_neurons = [neurons_list[idx] for idx in winner_neuron_per_data]
+
+        return winner_neurons, support_stuff
+
+    def train(
+        self,
+        epochs,
+        initial_gaussian_sigma,
+        initial_learning_rate,
+        decay,
+        dataset_percentage,
+        min_dataset_size,
+        seed,
+        maxiter,
+    ):
+        """
+        Train the GSOM. Run a given number of epochs,
+        updating the weights of the neurons and growing the map if necessary.
+        The training process can stop early if the map cannot grow
+        anymore or if the maximum number of iterations is reached.
+
+        :param epochs: int
+            The number of epochs for training.
+
+        :param initial_gaussian_sigma: float
+            The initial sigma value for the Gaussian function.
+
+        :param initial_learning_rate: float
+            The initial learning rate for training.
+
+        :param decay: float
+            The decay rate for the learning rate and Gaussian sigma.
+
+        :param dataset_percentage: float
+            The percentage of the dataset to use for each epoch.
+
+        :param min_dataset_size: int
+            The minimum size of the dataset for each epoch.
+
+        :param seed: int
+            The seed for the random number generator.
+
+        :param maxiter: int
+            The maximum number of iterations for training.
+        """
+        _iter = 0
+        can_grow = True
+        while can_grow and (_iter < maxiter):
+            self.__neurons_training(
+                decay,
+                epochs,
+                initial_learning_rate,
+                initial_gaussian_sigma,
+                dataset_percentage,
+                min_dataset_size,
+                seed,
+            )
+
+            _iter += 1
+            can_grow = self.__can_grow()
+            if can_grow:
+                self.grow()
+
+        if can_grow:
+            self.__map_data_to_neurons()
+        return self
+
+    def __neurons_training(
+        self,
+        decay,
+        epochs,
+        learning_rate,
+        sigma,
+        dataset_percentage,
+        min_dataset_size,
+        seed,
+    ):
+        """
+        Train the neurons. Update the weights of the neurons using
+        the current learning rate and gaussian sigma for a given number of epochs.
+
+        :param dataset: np.ndarray
+            The dataset used for training.
+
+        :param learning_rate: float
+            The learning rate for the training.
+
+        :param gaussian_sigma: float
+            The sigma value for the Gaussian function.
+
+        :param epochs_number: int
+            The number of epochs for the training.
+        """
+        lr = learning_rate
+        s = sigma
+        for _ in range(epochs):
+            for data in self.__training_data(
+                seed, dataset_percentage, min_dataset_size
+            ):
+                self.__update_neurons(data, lr, s)
+
+            lr *= decay
+            s *= decay
+
+    def __update_neurons(self, data, learning_rate, sigma):
+        """
+        Update the weights of the neurons.
+
+        :param data: np.ndarray
+            The data point(s).
+
+        :param learning_rate: float
+            The learning rate for the training.
+
+        :param gaussian_sigma: float
+            The sigma value for the Gaussian function.
+        """
+        gauss_kernel = self.__gaussian_kernel(self.winner_neuron(data)[0][0], sigma)
+
+        for neuron in self.neurons.values():
+            weight = neuron.weight_vector()
+            weight += learning_rate * gauss_kernel[neuron.position] * (data - weight)
+            self.weights_map[0][neuron.position] = weight
+
+    def __gaussian_kernel(self, winner_neuron, gaussian_sigma):
+        """
+        Compute the Gaussian kernel for a given winner neuron and Gaussian sigma.
+
+        :param winner_neuron: Neuron object
+            The neuron that won during the competitive phase.
+
+        :param gaussian_sigma: float
+            The sigma value for the Gaussian function.
+
+        :return: np.ndarray
+            The calculated Gaussian kernel.
+        """
+        winner_row, winner_col = winner_neuron.position
+        s = 2 * (gaussian_sigma**2)
+
+        gauss_col = np.power(np.arange(self.map_shape()[1]) - winner_col, 2) / s
+        gauss_row = np.power(np.arange(self.map_shape()[0]) - winner_row, 2) / s
+
+        return np.outer(np.exp(-1 * gauss_row), np.exp(-1 * gauss_col))
+
+    def __can_grow(self):
+        """
+        Check whether the GSOM can grow.
+        Compute the mean quantization error (MQE) of the neurons and check
+        whether it is greater than or equal to tau_1 times the parent quantization error,
+        and whether the number of neurons that have changed from
+        the previous epoch is greater than one fifth of the total number of neurons.
+
+        :return: bool
+            True if the GSOM can grow, False otherwise.
+        """
+        self.__map_data_to_neurons()
+
+        MQE = 0.0
+        mapped_neurons = 0
+        changed_neurons = 0
+
+        for neuron in self.neurons.values():
+            changed_neurons += 1 if neuron.has_changed_from_previous_epoch() else 0
+            if neuron.has_dataset():
+                MQE += neuron.compute_quantization_error()
+                mapped_neurons += 1
+
+        return (
+            (MQE / mapped_neurons) >= (self.__t1 * self.__parent_quantization_error)
+        ) and (changed_neurons > int(np.round(mapped_neurons / 5)))
+
+    def __map_data_to_neurons(self):
+        """
+        Map the data points to the neurons.
+
+        :param dataset: np.ndarray
+            The dataset used for training.
+        """
+        self.__clear_neurons_dataset()
+
+        # finding the new association for each neuron
+        _, support_stuff = self.winner_neuron(self.__parent_dataset)
+
+        neurons = list(self.neurons.values())
+        for idx, data_idxs in enumerate(support_stuff):
+            neurons[idx].replace_dataset(self.__parent_dataset[data_idxs, :])
+
+    def __clear_neurons_dataset(self):
+        """
+        Clear the dataset of all neurons.
+        """
+        for neuron in self.neurons.values():
+            neuron.clear_dataset()
+
+    def __find_error_neuron(
+        self,
+    ):
+        """
+        Find the neuron with the greatest quantization error.
+
+        :return: Neuron object
+            The neuron with the greatest quantization error.
+        """
+        # self.__map_data_to_neurons()
+
+        quantization_errors = list()
+        for neuron in self.neurons.values():
+            quantization_error = -np.inf
+            if neuron.has_dataset():
+                quantization_error = neuron.compute_quantization_error()
+            quantization_errors.append(quantization_error)
+
+        idx = np.unravel_index(np.argmax(quantization_errors), shape=self.map_shape())
+        return self.neurons[idx]
+
+    def __find_most_dissimilar_neuron(self, error_neuron):
+        """
+        Find the neuron that is most dissimilar to a given error neuron.
+
+        :param error_neuron: Neuron object
+            The error neuron.
+
+        :return: Neuron object
+            The most dissimilar neuron.
+        """
+        weight_distances = dict()
+        for neuron in self.neurons.values():
+            if self.are_neurons_neighbours(error_neuron, neuron):
+                weight_distances[neuron] = error_neuron.weight_distance_from_other_unit(
+                    neuron
+                )
+
+        return max(weight_distances, key=weight_distances.get)
+
+    def grow(self):
+        """
+        Grow the GSOM.
+        """
+        error_neuron = self.__find_error_neuron()
+        dissimilar_neuron = self.__find_most_dissimilar_neuron(error_neuron)
+
+        if self.are_in_same_row(error_neuron, dissimilar_neuron):
+            new_neuron_idxs = self.add_column_between(error_neuron, dissimilar_neuron)
+            self.__init_new_neurons_weight_vector(new_neuron_idxs, "horizontal")
+        elif self.are_in_same_column(error_neuron, dissimilar_neuron):
+            new_neuron_idxs = self.add_row_between(error_neuron, dissimilar_neuron)
+            self.__init_new_neurons_weight_vector(new_neuron_idxs, "vertical")
+        else:
+            raise RuntimeError("Error neuron and the most dissimilar are not adjacent")
+
+    def add_column_between(self, error_neuron, dissimilar_neuron):
+        """
+        Add a column of neurons between two given neurons.
+
+        :param error_neuron: Neuron object
+            The error neuron.
+
+        :param most_dissimilar_neuron: Neuron object
+            The most dissimilar neuron.
+        """
+        error_col = error_neuron.position[1]
+        dissimilar_col = dissimilar_neuron.position[1]
+        new_column_idx = max(error_col, dissimilar_col)
+
+        map_rows, map_cols = self.map_shape()
+
+        new_line_idx = [(row, new_column_idx) for row in range(map_rows)]
+
+        for row in range(map_rows):
+            for col in reversed(range(new_column_idx, map_cols)):
+                new_idx = (row, col + 1)
+                neuron = self.neurons.pop((row, col))
+                neuron.position = new_idx
+                self.neurons[new_idx] = neuron
+
+        line = np.zeros(shape=(map_rows, 1, self.__data_size), dtype=np.float32)
+        self.weights_map[0] = np.insert(
+            self.weights_map[0], new_column_idx, line, axis=1
+        )
+
+        return new_line_idx
+
+    def add_row_between(self, error_neuron, dissimilar_neuron):
+        """
+        Add a row of neurons between two given neurons.
+
+        :param error_neuron: Neuron object
+            The error neuron.
+
+        :param most_dissimilar_neuron: Neuron object
+            The most dissimilar neuron.
+        """
+        error_row = error_neuron.position[0]
+        dissimilar_row = dissimilar_neuron.position[0]
+        new_row_idx = max(error_row, dissimilar_row)
+
+        map_rows, map_cols = self.map_shape()
+
+        new_line_idx = [(new_row_idx, col) for col in range(map_cols)]
+
+        for row in reversed(range(new_row_idx, map_rows)):
+            for col in range(map_cols):
+                new_idx = (row + 1, col)
+                neuron = self.neurons.pop((row, col))
+                neuron.position = new_idx
+                self.neurons[new_idx] = neuron
+
+        line = np.zeros(shape=(1, map_cols, self.__data_size), dtype=np.float32)
+        self.weights_map[0] = np.insert(self.weights_map[0], new_row_idx, line, axis=0)
+
+        return new_line_idx
+
+    def __init_new_neurons_weight_vector(self, new_neuron_idxs, new_line_direction):
+        """
+        Initialize the weight vector of the new neurons.
+
+        :param error_neuron: Neuron object
+            The error neuron.
+
+        :param most_dissimilar_neuron: Neuron object
+            The most dissimilar neuron.
+
+        :return: np.ndarray
+            The initialized weight vector.
+        """
+        for row, col in new_neuron_idxs:
+            adjacent_neuron_idxs = self.__get_adjacent_neuron_idxs_by_direction(
+                row, col, new_line_direction
+            )
+            weight_vector = self.__mean_weight_vector(adjacent_neuron_idxs)
+
+            self.weights_map[0][row, col] = weight_vector
+            self.neurons[(row, col)] = self.__build_neuron((row, col))
+
+    def __mean_weight_vector(self, neuron_idxs):
+        """
+        Compute the mean weight vector of a set of neurons.
+
+        :param neurons: list
+            The list of Neuron objects.
+
+        :return: np.ndarray
+            The calculated mean weight vector.
+        """
+        weight_vector = np.zeros(shape=self.__data_size, dtype=np.float32)
+        for adjacent_idx in neuron_idxs:
+            weight_vector += 0.5 * self.neurons[adjacent_idx].weight_vector()
+        return weight_vector
+
+    @staticmethod
+    def __get_adjacent_neuron_idxs_by_direction(row, col, direction):
+        """
+        Get the indices of the neurons that are adjacent to a given neuron in a given direction.
+
+        :param neuron_idx: tuple
+            The indices of the neuron.
+
+        :param direction: str
+            The direction ('horizontal', 'vertical').
+
+        :return: list
+            The list of adjacent neuron indices.
+        """
+        adjacent_neuron_idxs = list()
+        if direction == "horizontal":
+            adjacent_neuron_idxs = [(row, col - 1), (row, col + 1)]
+
+        elif direction == "vertical":
+            adjacent_neuron_idxs = [(row - 1, col), (row + 1, col)]
+
+        return adjacent_neuron_idxs
+
+    @staticmethod
+    def are_neurons_neighbours(first_neuron, second_neuron):
+        """
+        Check whether two given neurons are neighbours.
+
+        :param neuron1_idx: tuple
+            The indices of the first neuron.
+
+        :param neuron2_idx: tuple
+            The indices of the second neuron.
+
+        :return: bool
+            True if the neurons are neighbours, False otherwise.
+        """
+        return (
+            np.linalg.norm(
+                np.asarray(first_neuron.position) - np.asarray(second_neuron.position),
+                ord=1,
+            )
+            == 1
+        )
+
+    @staticmethod
+    def are_in_same_row(first_neuron, second_neuron):
+        """
+        Check whether two given neurons are in the same row.
+
+        :param neuron1_idx: tuple
+            the indices of the first neuron.
+
+        :param neuron2_idx: tuple
+            the indices of the second neuron.
+
+        :return: bool
+            True if the neurons are in the same row, False otherwise.
+        """
+        return abs(first_neuron.position[0] - second_neuron.position[0]) == 0
+
+    @staticmethod
+    def are_in_same_column(first_neuron, second_neuron):
+        """
+        Check whether two given neurons are in the same column.
+
+        :param neuron1_idx: tuple
+            the indices of the first neuron.
+
+        :param neuron2_idx: tuple
+            the indices of the second neuron.
+
+        :return: bool
+            True if the neurons are in the same column, False otherwise.
+        """
+        return abs(first_neuron.position[1] - second_neuron.position[1]) == 0
+
+    def __build_neurons_list(self):
+        """
+        Build a list of neurons given a map shape and a weights map.
+
+        :param map_shape: tuple
+            the shape of the map (height, width).
+
+        :param weights_map: ndarray
+            the weights map.
+
+        :return: list
+            the list of built Neuron objects.
+        """
+        rows, cols = self.__initial_map_size
+        return {
+            (x, y): self.__build_neuron((x, y))
+            for x in range(rows)
+            for y in range(cols)
+        }
+
+    def __build_neuron(self, weight_position):
+        """
+        Build a single neuron given a weights map and a position.
+
+        :param weights_map: ndarray
+            the weights map.
+
+        :param position: tuple
+            the position of the neuron.
+
+        :return: Neuron object
+            the built neuron.
+        """
+        return self.__neuron_builder.new_neuron(self.weights_map, weight_position)
+
+    def map_shape(self):
+        """
+        Return the shape of the map.
+
+        :return: tuple
+            the shape of the map (height, width).
+        """
+        shape = self.weights_map[0].shape
+        return shape[0], shape[1]
+
+    def __training_data(self, seed, dataset_percentage, min_size):
+        """
+        Return a generator that produces a random subset of the parent dataset for training.
+
+        :param dataset: ndarray
+            the dataset used for training.
+
+        :param dataset_percentage: float
+            the percentage of the dataset to use for each epoch.
+
+        :param min_dataset_size: int
+            the minimum size of the dataset for each epoch.
+
+        :param seed: int
+            the seed for the random number generator.
+
+        :return: generator
+            producing random subsets of the parent dataset.
+        """
+        dataset_size = len(self.__parent_dataset)
+        if dataset_size <= min_size:
+            iterator = range(dataset_size)
+        else:
+            iterator = range(int(ceil(dataset_size * dataset_percentage)))
+
+        random_generator = np.random.RandomState(seed)
+        for _ in iterator:
+            yield self.__parent_dataset[random_generator.randint(dataset_size)]

@@ -1,0 +1,102 @@
+site_name: GHSOM-Py Documentation
+site_description: Growing Hierarchical Self-Organizing Maps in Python
+site_author: GHSOM Contributors
+site_url: https://dadmaan.github.io/ghsom-py/
+
+repo_name: dadmaan/ghsom-py
+repo_url: https://github.com/dadmaan/ghsom-py
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  palette:
+    # Light mode
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    # Dark mode
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.code.annotate
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            docstring_style: google
+            show_source: true
+            show_root_heading: true
+            show_root_full_path: false
+            show_symbol_type_heading: true
+            show_symbol_type_toc: true
+            members_order: source
+            group_by_category: true
+            show_category_heading: true
+            show_if_no_docstring: false
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - Getting Started:
+    - Installation: getting-started/installation.md
+    - Quick Start: getting-started/quickstart.md
+  - Tutorials:
+    - Training Your First Model: tutorials/01_basic_training.md
+    - Using Callbacks: tutorials/02_callbacks.md
+    - Saving and Loading Models: tutorials/03_persistence.md
+    - Model Evaluation: tutorials/04_evaluation.md
+    - Advanced Usage: tutorials/05_advanced.md
+  - API Reference:
+    - Core:
+      - GHSOM: api/core/ghsom.md
+      - GSOM: api/core/gsom.md
+      - Neuron: api/core/neuron.md
+    - Callbacks: api/callbacks.md
+    - Evaluation: api/evaluation.md
+    - IO: api/io.md
+    - Utilities: api/utils.md
+  - Contributing: contributing.md
+  - Changelog: changelog.md
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/dadmaan/ghsom-py
+  version:
+    provider: mike
