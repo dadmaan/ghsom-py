@@ -197,4 +197,4 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## Acknowledgments
 
-This implementation is based on the GHSOM algorithm by Rauber et al. (2002) and was extracted from a music generation reinforcement learning project.
+This implementation is based on the GHSOM algorithm by Rauber et al. (2002). It was originally forked from [enriciv][https://github.com/enricivi/growing_hierarchical_som].
