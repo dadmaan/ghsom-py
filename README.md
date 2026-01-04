@@ -193,7 +193,8 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## Related Projects
 
-- [ghsom-toolkits](https://github.com/dadmaan/ghsom-toolkits) - Visualization and analysis tools for GHSOM *(coming soon)*
+- [ghsom-toolkits](https://github.com/dadmaan/ghsom-toolkits) - Visualization and analysis tools for GHSOM
+- [aria](https://github.com/dadmaan/aria) - Multi-agent RL framework for user-centric music generation
 
 ## Acknowledgments
 
