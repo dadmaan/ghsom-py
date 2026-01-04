@@ -1,8 +1,8 @@
 # GHSOM-Py
 
-[![Tests](https://github.com/dadmaan/ghsom-py/actions/workflows/tests.yml/badge.svg)](https://github.com/dadmaan/ghsom-py/actions/workflows/tests.yml)
+<!-- [![Tests](https://github.com/dadmaan/ghsom-py/actions/workflows/tests.yml/badge.svg)](https://github.com/dadmaan/ghsom-py/actions/workflows/tests.yml)
 [![Code Quality](https://github.com/dadmaan/ghsom-py/actions/workflows/quality.yml/badge.svg)](https://github.com/dadmaan/ghsom-py/actions/workflows/quality.yml)
-[![Python Version](https://img.shields.io/pypi/pyversions/ghsom-py)](https://pypi.org/project/ghsom-py/)
+[![Python Version](https://img.shields.io/pypi/pyversions/ghsom-py)](https://pypi.org/project/ghsom-py/) -->
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 A pure Python implementation of the **Growing Hierarchical Self-Organizing Map (GHSOM)** algorithm for unsupervised learning and hierarchical clustering.
